@@ -1,0 +1,46 @@
+# Project Structure:
+# study_assistant/
+# ├── main.py                    # Main application entry point
+# ├── requirements.txt           # Dependencies
+# ├── config/
+# │   └── settings.py           # Configuration settings
+# ├── models/
+# │   ├── __init__.py
+# │   ├── llm_manager.py        # LLM management
+# │   └── embeddings_manager.py # Embeddings management
+# ├── document_processing/
+# │   ├── __init__.py
+# │   ├── document_loader.py    # Document loading
+# │   └── text_processor.py    # Text processing and chunking
+# ├── vector_store/
+# │   ├── __init__.py
+# │   └── vector_manager.py    # Vector store management
+# ├── tutoring/
+# │   ├── __init__.py
+# │   ├── question_generator.py # Question generation
+# │   └── tutor_engine.py      # Main tutoring logic
+# ├── ui/
+# │   ├── __init__.py
+# │   └── streamlit_app.py     # Streamlit interface
+# └── utils/
+#     ├── __init__.py
+#     └── helpers.py           # Utility functions
+
+
+# pip install streamlit langchain langchain-community faiss-cpu sentence-transformers pypdf docx2txt tiktoken  python-docx
+
+
+# =============================================================================
+# requirements.txt
+# =============================================================================
+"""
+streamlit==1.28.1
+langchain==0.0.354
+langchain-community==0.0.10
+faiss-cpu==1.7.4
+sentence-transformers==2.2.2
+pypdf==3.17.1
+docx2txt==0.8
+tiktoken==0.5.2
+python-docx==1.1.0
+"""
