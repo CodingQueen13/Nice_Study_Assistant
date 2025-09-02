@@ -65,6 +65,11 @@ class StudyAssistantUI:
     
     def render_sidebar(self):
         """Render sidebar with system controls"""
+        
+        llm_label = "Initialize Ollama LLM" if self.config.LLM_PROVIDER == "ollama" else "Initialize Gemini LLM"
+        spinner_msg = "Connecting to Ollama..." if self.config.LLM_PROVIDER == "ollama" else "Connecting to Gemini..."
+
+
         with st.sidebar:
             st.header("🔧 System Control")
             
@@ -80,16 +85,16 @@ class StudyAssistantUI:
                         st.error("❌ Embeddings failed!")
             
             # Initialize LLM
-            if st.button("Initialize Ollama LLM"):
-                with st.spinner("Connecting to Ollama..."):
+            if st.button(llm_label):
+                with st.spinner(spinner_msg):
                     if st.session_state.llm_manager.initialize_llm():
-                        st.success("✅ Ollama connected!")
-                        
+                        st.success(f"✅ {self.config.LLM_PROVIDER.capitalize()} connected!")
+
                         # Initialize vector manager
                         st.session_state.vector_manager = VectorStoreManager(
                             st.session_state.embeddings_manager
                         )
-                        
+
                         # Initialize tutoring components
                         st.session_state.question_generator = QuestionGenerator(
                             st.session_state.llm_manager,
@@ -99,10 +104,11 @@ class StudyAssistantUI:
                             st.session_state.llm_manager,
                             st.session_state.vector_manager
                         )
-                        
+
                         st.session_state.system_ready = True
                     else:
-                        st.error("❌ Ollama connection failed!")
+                        st.error(f"❌ {self.config.LLM_PROVIDER.capitalize()} connection failed!")
+
             
             # Status indicators
             if st.session_state.embeddings_manager and st.session_state.embeddings_manager.get_embeddings():
@@ -110,10 +116,11 @@ class StudyAssistantUI:
             else:
                 st.error("🔴 Embeddings Not Ready")
             
+            provider_name = self.config.LLM_PROVIDER.capitalize()
             if st.session_state.llm_manager and st.session_state.llm_manager.is_ready():
-                st.success("🟢 Ollama Ready")
+                st.success(f"🟢 {provider_name} Ready")
             else:
-                st.error("🔴 Ollama Not Ready")
+                st.error(f"🔴 {provider_name} Not Ready")
             
             if st.session_state.documents_processed:
                 st.success("🟢 Documents Processed")

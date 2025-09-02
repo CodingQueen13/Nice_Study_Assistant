@@ -21,20 +21,26 @@ from ui.streamlit_app import StudyAssistantUI
 from utils.helpers import SystemUtils
 
 def check_prerequisites():
-    """Check if all prerequisites are met"""
     st.sidebar.header("🔍 System Check")
-    
-    # Check Ollama
-    if SystemUtils.check_ollama_running():
-        st.sidebar.success("✅ Ollama is running")
-    else:
-        st.sidebar.error("❌ Ollama not detected")
-        st.sidebar.markdown("""
-        **To start Ollama:**
-        1. Install from https://ollama.ai/
-        2. Run `ollama serve` in terminal
-        3. Run `ollama pull llama2`
-        """)
+
+    from config.settings import Config
+
+    if Config.LLM_PROVIDER == "ollama":
+        if SystemUtils.check_ollama_running():
+            st.sidebar.success("✅ Ollama is running")
+        else:
+            st.sidebar.error("❌ Ollama not detected")
+            st.sidebar.markdown("""
+            **To start Ollama:**
+            1. Install from https://ollama.ai/
+            2. Run `ollama serve` in terminal
+            3. Run `ollama pull llama2`
+            """)
+    elif Config.LLM_PROVIDER == "gemini":
+        if Config.GEMINI_API_KEY:
+            st.sidebar.success("✅ Gemini API key detected")
+        else:
+            st.sidebar.error("❌ Gemini API key not set")
     
     # System resources
     with st.sidebar.expander("System Resources"):
