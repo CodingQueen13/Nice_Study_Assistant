@@ -16,6 +16,7 @@ from document_processing.text_processor import TextProcessor
 from vector_store.vector_manager import VectorStoreManager
 from tutoring.question_generator import QuestionGenerator
 from tutoring.tutor_engine import TutorEngine
+from utils.helpers import SystemUtils
 
 class StudyAssistantUI:
     """Main UI class for the Study Assistant"""
@@ -55,86 +56,155 @@ class StudyAssistantUI:
                 st.session_state[var] = default_value
     
     def initialize_components(self):
-        """Initialize all system components"""
-        if not st.session_state.system_ready:
-            # Initialize managers
+        """Initialize all system components if they are missing.
+
+        Important: it does NOT recreate the managers on every rerun — because that will erase
+        already-initialized objects during the multi-step init sequence.
+        """
+        # Create each manager only if it's not already present in session_state
+        if st.session_state.get("llm_manager") is None:
             st.session_state.llm_manager = LLMManager()
+        if st.session_state.get("embeddings_manager") is None:
             st.session_state.embeddings_manager = EmbeddingsManager()
+        if st.session_state.get("document_loader") is None:
             st.session_state.document_loader = DocumentLoader()
+        if st.session_state.get("text_processor") is None:
             st.session_state.text_processor = TextProcessor()
+        # vector_manager, question_generator, tutor_engine are created later,
+        # only after documents are processed (so don't touch them here)
+
     
     def render_sidebar(self):
         """Render sidebar with system controls"""
-        
-        llm_label = "Initialize Ollama LLM" if self.config.LLM_PROVIDER == "ollama" else "Initialize Gemini LLM"
-        spinner_msg = "Connecting to Ollama..." if self.config.LLM_PROVIDER == "ollama" else "Connecting to Gemini..."
-
-
         with st.sidebar:
             st.header("🔧 System Control")
-            
-            # System status
-            st.subheader("System Status")
-            
-            # Initialize embeddings
-            if st.button("Initialize Embeddings"):
-                with st.spinner("Initializing embeddings..."):
-                    if st.session_state.embeddings_manager.initialize_embeddings():
-                        st.success("✅ Embeddings ready!")
+
+            # --- LLM Provider Selection ---
+            provider = st.radio(
+                "Choose LLM Provider:",
+                ["ollama", "gemini"],
+                index=0 if self.config.LLM_PROVIDER == "ollama" else 1,
+                key="llm_provider",
+                disabled=st.session_state.get("ui_disabled", False)
+            )
+
+            # If provider changes, force re-init
+            if provider != self.config.LLM_PROVIDER:
+                self.config.LLM_PROVIDER = provider
+                self.config.apply_dynamic_settings()
+                st.session_state.system_ready = False
+                st.session_state.documents_processed = False
+                st.session_state["init_status"] = "initializing_embeddings"
+                st.session_state["ui_disabled"] = True
+
+            # --- Initialization Process ---
+            if "init_status" not in st.session_state:
+                st.session_state["init_status"] = "initializing_embeddings"
+                st.session_state["ui_disabled"] = True
+
+            status = st.session_state["init_status"]
+
+            if status == "initializing_embeddings":
+                st.info("⏳ Please wait, Initializing Embeddings…")
+                # Check if embeddings are already initialized
+                if (st.session_state.embeddings_manager and 
+                    st.session_state.embeddings_manager.get_embeddings() is not None):
+                    st.session_state["init_status"] = "initializing_llm"
+                    st.rerun()
+                elif st.session_state.embeddings_manager.initialize_embeddings():
+                    # Verify embeddings are properly loaded
+                    embeddings = st.session_state.embeddings_manager.get_embeddings()
+                    if embeddings is None:
+                        st.error("❌ Embeddings failed to load correctly")
+                        st.session_state["init_status"] = "failed"
                     else:
-                        st.error("❌ Embeddings failed!")
-            
-            # Initialize LLM
-            if st.button(llm_label):
-                with st.spinner(spinner_msg):
-                    if st.session_state.llm_manager.initialize_llm():
-                        st.success(f"✅ {self.config.LLM_PROVIDER.capitalize()} connected!")
+                        st.success("✅ Embeddings initialized successfully!")
+                        st.session_state["init_status"] = "initializing_llm"
+                        st.rerun()
+                else:
+                    st.error("❌ Failed to initialize embeddings")
+                    st.session_state["init_status"] = "failed"
 
-                        # Initialize vector manager
-                        st.session_state.vector_manager = VectorStoreManager(
-                            st.session_state.embeddings_manager
-                        )
+            elif status == "initializing_llm":
+                st.info(f"⏳ Please wait, Initializing {self.config.LLM_PROVIDER.capitalize()} LLM…")
+                if st.session_state.llm_manager.initialize_llm():
+                    if st.session_state.embeddings_manager.get_embeddings() is None:
+                        st.error("❌ Embeddings lost during LLM initialization")
+                        st.session_state["init_status"] = "failed"
+                        st.rerun()
 
-                        # Initialize tutoring components
-                        st.session_state.question_generator = QuestionGenerator(
-                            st.session_state.llm_manager,
-                            st.session_state.vector_manager
-                        )
-                        st.session_state.tutor_engine = TutorEngine(
-                            st.session_state.llm_manager,
-                            st.session_state.vector_manager
-                        )
+                    # Only mark system ready (wait for documents before creating vector/tutor components)
+                    st.session_state.system_ready = True
+                    st.session_state["init_status"] = "ready"
+                    st.session_state["ui_disabled"] = False
+                    st.success("✅ LLM initialized! Ready for document upload.")
+                    st.rerun()
+                else:
+                    st.session_state["init_status"] = "failed"
+                    st.session_state["ui_disabled"] = False
 
-                        st.session_state.system_ready = True
-                    else:
-                        st.error(f"❌ {self.config.LLM_PROVIDER.capitalize()} connection failed!")
+            elif status == "ready":
+                st.success("✅ Assistant is ready!")
+                # Additional verification
+                if (st.session_state.embeddings_manager and 
+                    st.session_state.embeddings_manager.get_embeddings() is None):
+                    st.warning("⚠️ Embeddings may have been lost - reinitializing...")
+                    st.session_state["init_status"] = "initializing_embeddings"
+                    st.rerun()
 
-            
-            # Status indicators
-            if st.session_state.embeddings_manager and st.session_state.embeddings_manager.get_embeddings():
-                st.success("🟢 Embeddings Ready")
-            else:
-                st.error("🔴 Embeddings Not Ready")
-            
-            provider_name = self.config.LLM_PROVIDER.capitalize()
-            if st.session_state.llm_manager and st.session_state.llm_manager.is_ready():
-                st.success(f"🟢 {provider_name} Ready")
-            else:
-                st.error(f"🔴 {provider_name} Not Ready")
-            
+            elif status == "failed":
+                st.error("❌ Failed to initialize system")
+                if st.button("Retry Initialization"):
+                    st.session_state["init_status"] = "initializing_embeddings"
+                    st.session_state["ui_disabled"] = True
+                    st.rerun()
+
+            # --- Documents Status ---
+            st.subheader("📄 Documents")
             if st.session_state.documents_processed:
                 st.success("🟢 Documents Processed")
             else:
                 st.warning("🟡 No Documents Loaded")
-            
-            # System info
-            st.subheader("Configuration")
-            st.info(f"Model: {self.config.OLLAMA_MODEL}")
-            st.info(f"Embeddings: CPU-optimized")
-            st.info(f"Chunk Size: {self.config.CHUNK_SIZE}")
-            
-            # Clear conversation
-            if st.button("Clear Conversation"):
+
+            # --- System Resources ---
+            st.subheader("💻 System Resources")
+            with st.expander("System Resources"):
+                if st.button("🔄 Refresh Resources", key="refresh_resources"):
+                    st.session_state["resources"] = SystemUtils.check_system_resources()
+                if "resources" not in st.session_state:
+                    st.session_state["resources"] = SystemUtils.check_system_resources()
+                resources = st.session_state["resources"]
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("CPU Usage", f"{resources['cpu_usage']:.1f}%")
+                with col2:
+                    st.metric("Memory Available", f"{resources['memory_available_gb']:.1f} GB")
+                with col3:
+                    st.metric("Memory Usage", f"{resources['memory_usage_percent']:.1f}%")
+
+            # --- Configuration ---
+            st.subheader("⚙️ Configuration")
+            with st.expander("Current Configuration"):
+                st.info(f"Provider: {self.config.LLM_PROVIDER}")
+                st.info(f"Model: {self.config.OLLAMA_MODEL if self.config.LLM_PROVIDER=='ollama' else self.config.GEMINI_MODEL}")
+                st.info(f"Chunk Size: {self.config.CHUNK_SIZE}")
+                st.info(f"Conversation Memory: {self.config.CONVERSATION_MEMORY_K}")
+
+            # --- Debug Information ---
+            with st.expander("🔍 Debug Information"):
+                st.write("Embeddings Manager Status:", 
+                         "✅ Ready" if (st.session_state.embeddings_manager and 
+                                      st.session_state.embeddings_manager.get_embeddings() is not None) 
+                         else "❌ Not Ready")
+                st.write("LLM Manager Status:", 
+                         "✅ Ready" if (st.session_state.llm_manager and 
+                                      st.session_state.llm_manager.is_ready()) 
+                         else "❌ Not Ready")
+                st.write("Vector Manager Status:", 
+                         "✅ Ready" if st.session_state.vector_manager else "❌ Not Ready")
+
+            # --- Conversation ---
+            if st.button("Clear Conversation", disabled=st.session_state.get("ui_disabled", False)):
                 st.session_state.chat_history = []
                 if st.session_state.tutor_engine:
                     st.session_state.tutor_engine.clear_memory()
@@ -142,6 +212,11 @@ class StudyAssistantUI:
     def render_document_upload(self):
         """Render document upload section"""
         st.header("📚 Upload Study Materials")
+
+        if st.session_state.get("ui_disabled", False):
+            st.info("⏳ Uploads disabled while initializing.")
+            return        
+        
         
         uploaded_files = st.file_uploader(
             "Upload your textbooks, notes, or study materials",
@@ -156,6 +231,15 @@ class StudyAssistantUI:
     
     def process_documents(self, uploaded_files):
         """Process uploaded documents"""
+        # Verify embeddings are still available before processing - fix the check
+        if (not st.session_state.embeddings_manager or 
+            st.session_state.embeddings_manager.embeddings is None):
+            st.error("❌ Embeddings not available! Please reinitialize the system.")
+            st.session_state["init_status"] = "initializing_embeddings"
+            st.session_state["ui_disabled"] = True
+            st.rerun()
+            return
+            
         with st.spinner("Processing documents..."):
             # Load documents
             documents = st.session_state.document_loader.load_documents_from_uploads(uploaded_files)
@@ -172,15 +256,36 @@ class StudyAssistantUI:
             st.info(f"Created {stats['total_chunks']} chunks with average size {stats['avg_chunk_size']:.0f} characters")
             
             # Create vector store
+            if st.session_state.vector_manager is None:
+                st.session_state.vector_manager = VectorStoreManager(
+                    st.session_state.embeddings_manager
+                )
+            
             if st.session_state.vector_manager.create_vector_store(processed_docs):
                 st.session_state.documents_processed = True
-                st.success("✅ Documents processed successfully!")
+                
+                # Now initialize tutoring stack
+                st.session_state.question_generator = QuestionGenerator(
+                    st.session_state.llm_manager,
+                    st.session_state.vector_manager
+                )
+                st.session_state.tutor_engine = TutorEngine(
+                    st.session_state.llm_manager,
+                    st.session_state.vector_manager
+                )
+                
+                st.success("✅ Documents processed and tutoring engine ready!")
             else:
                 st.error("❌ Failed to process documents!")
+
     
     def render_chat_interface(self):
         """Render chat interface"""
         st.header("💬 Study Chat")
+        
+        if st.session_state.get("ui_disabled", False):
+            st.info("⏳ Chat disabled while initializing.")
+            return
         
         if not st.session_state.system_ready:
             st.warning("Please initialize the system first (see sidebar)")
@@ -230,6 +335,10 @@ class StudyAssistantUI:
     def render_question_generator(self):
         """Render question generation interface"""
         st.header("❓ Generate Study Questions")
+        
+        if st.session_state.get("ui_disabled", False):
+            st.info("⏳ Question generation disabled while initializing.")
+            return
         
         if not st.session_state.system_ready or not st.session_state.documents_processed:
             st.warning("Please initialize system and upload documents first")
@@ -306,16 +415,18 @@ class StudyAssistantUI:
         self.render_sidebar()
         
         # Main content tabs
-        tab1, tab2, tab3 = st.tabs(["📁 Upload Documents", "💬 Study Chat", "❓ Generate Questions"])
-        
-        with tab1:
-            self.render_document_upload()
-        
-        with tab2:
-            self.render_chat_interface()
-        
-        with tab3:
-            self.render_question_generator()
+        if st.session_state.get("init_status") != "ready":
+            st.warning("⏳ Assistant is still initializing. Please wait...")
+        else:
+            tab1, tab2, tab3 = st.tabs(["📁 Upload Documents", "💬 Study Chat", "❓ Generate Questions"])
+
+            with tab1:
+                self.render_document_upload()
+            with tab2:
+                self.render_chat_interface()
+            with tab3:
+                self.render_question_generator()
+
         
         # Instructions at bottom
         self.render_instructions()

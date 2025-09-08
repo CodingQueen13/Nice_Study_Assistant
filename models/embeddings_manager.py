@@ -15,6 +15,7 @@ class EmbeddingsManager:
         """Initialize HuggingFace embeddings optimized for CPU"""
         try:
             # Force CPU usage and optimize for speed
+            print("Starting embeddings initialization...")  # Debug
             model_kwargs = {
                 'device': self.config.EMBEDDINGS_DEVICE,
                 'trust_remote_code': True
@@ -30,7 +31,7 @@ class EmbeddingsManager:
                 model_kwargs=model_kwargs,
                 encode_kwargs=encode_kwargs
             )
-            
+            print("Embeddings created successfully")  # Debug
             return True
             
         except Exception as e:

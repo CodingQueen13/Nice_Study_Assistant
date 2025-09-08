@@ -16,7 +16,7 @@ class Config:
 
     
     # LLM settings
-    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")  # "ollama" or "gemini"
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")  # "ollama" or "gemini"
 
     # Ollama settings
     OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")

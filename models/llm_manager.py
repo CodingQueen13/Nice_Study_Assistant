@@ -31,7 +31,7 @@ class LLMManager:
                     top_p=0.9,
                     repeat_penalty=1.1,
                     callbacks=[StreamingStdOutCallbackHandler()],
-                    verbose=False,
+                    verbose=True,
                 )
                 test_response = self.llm.invoke("Hello")
                 return bool(test_response)
